@@ -5,7 +5,7 @@ CLASS zcl_2950_case_distinctions DEFINITION
 
   PUBLIC SECTION.
 
-    INTERFACES if_oo_adt_classrun .
+    INTERFACES if_oo_adt_classrun.
   PROTECTED SECTION.
   PRIVATE SECTION.
 ENDCLASS.
