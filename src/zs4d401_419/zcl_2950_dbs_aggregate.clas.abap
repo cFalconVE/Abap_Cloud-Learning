@@ -1,4 +1,4 @@
-CLASS zcl_2590_dbs_functions DEFINITION
+CLASS zcl_2950_dbs_aggregate DEFINITION
   PUBLIC
   FINAL
   CREATE PUBLIC .
@@ -10,7 +10,7 @@ CLASS zcl_2590_dbs_functions DEFINITION
   PRIVATE SECTION.
 ENDCLASS.
 
-CLASS ZCL_2590_DBS_FUNCTIONS IMPLEMENTATION.
+CLASS ZCL_2950_DBS_AGGREGATE IMPLEMENTATION.
 
   METHOD if_oo_adt_classrun~main.
 
@@ -20,7 +20,7 @@ CLASS ZCL_2590_DBS_FUNCTIONS IMPLEMENTATION.
         DATA(carrier) = NEW lcl_carrier(  i_carrier_id = c_carrier_id ).
 
         out->write(  name = `Carrier Overview`
-                     data = carrier->get_output(  ) ).
+                     data = carrier->get_output( ) ).
 
       CATCH cx_abap_invalid_value.
         out->write( | Carrier { c_carrier_id } does not exist | ).
