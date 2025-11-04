@@ -1,4 +1,4 @@
-CLASS zcl_2950_dbs_functions DEFINITION
+CLASS zcl_2950_its_fsym DEFINITION
   PUBLIC
   FINAL
   CREATE PUBLIC .
@@ -10,14 +10,14 @@ CLASS zcl_2950_dbs_functions DEFINITION
   PRIVATE SECTION.
 ENDCLASS.
 
-CLASS ZCL_2950_DBS_FUNCTIONS IMPLEMENTATION.
+CLASS ZCL_2950_ITS_FSYM IMPLEMENTATION.
 
   METHOD if_oo_adt_classrun~main.
 
     CONSTANTS c_carrier_id TYPE /dmo/carrier_id VALUE 'LH'.
 
     TRY.
-        DATA(carrier) = NEW lcl_carrier(  i_carrier_id = c_carrier_id ).
+        DATA(carrier) = NEW lcl_carrier( i_carrier_id = c_carrier_id ).
 
         out->write(  name = `Carrier Overview`
                      data = carrier->get_output(  ) ).
@@ -44,7 +44,8 @@ CLASS ZCL_2950_DBS_FUNCTIONS IMPLEMENTATION.
            i_seats           = 5
          IMPORTING
            e_flight =     DATA(pass_flight)
-           e_days_later = DATA(days_later) ).
+           e_days_later = DATA(days_later)
+                         ).
 
       IF pass_flight IS BOUND.
         out->write( name = |Found a suitable passenger flight in { days_later } days:|
@@ -67,7 +68,8 @@ CLASS ZCL_2950_DBS_FUNCTIONS IMPLEMENTATION.
            i_cargo           = 1200
          IMPORTING
            e_flight =     DATA(cargo_flight)
-           e_days_later = DATA(days_later2) ).
+           e_days_later = DATA(days_later2)
+                         ).
 
       IF cargo_flight IS BOUND.
         out->write( name = |Found a suitable cargo flight in { days_later2 } days:|
@@ -75,6 +77,8 @@ CLASS ZCL_2950_DBS_FUNCTIONS IMPLEMENTATION.
       ELSE.
         out->write( data = `No cargo flight found` ).
       ENDIF.
+
+
 
     ENDIF.
 

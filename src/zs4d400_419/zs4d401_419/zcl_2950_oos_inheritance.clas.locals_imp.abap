@@ -1,14 +1,7 @@
-*"* use this source file for the definition and implementation of
-*"* local helper classes, interface definitions and type
-*"* declarations
-
-CLASS lcl_passenger_flight DEFINITION .
+*CLASS lcl_flight DEFINITION CREATE PRIVATE.
+CLASS lcl_flight DEFINITION ABSTRACT.
 
   PUBLIC SECTION.
-
-    DATA carrier_id    TYPE /dmo/carrier_id       READ-ONLY.
-    DATA connection_id TYPE /dmo/connection_id    READ-ONLY.
-    DATA flight_date   TYPE /dmo/flight_date      READ-ONLY.
 
     METHODS constructor
       IMPORTING
@@ -16,7 +9,19 @@ CLASS lcl_passenger_flight DEFINITION .
         i_connection_id TYPE /dmo/connection_id
         i_flight_date   TYPE /dmo/flight_date.
 
+    METHODS get_description
+      RETURNING
+        VALUE(r_result) TYPE string_table.
+
+*    METHODS constructor
+*      IMPORTING
+*        i_carrier_id    TYPE /dmo/carrier_id
+*        i_connection_id TYPE /dmo/connection_id
+*        i_flight_date   TYPE /dmo/flight_date.
+
     TYPES:
+      tab TYPE STANDARD TABLE OF REF TO lcl_flight WITH DEFAULT KEY,
+
       BEGIN OF st_connection_details,
         airport_from_id TYPE /dmo/airport_from_id,
         airport_to_id   TYPE /dmo/airport_to_id,
@@ -25,20 +30,75 @@ CLASS lcl_passenger_flight DEFINITION .
         duration        TYPE i,
       END OF st_connection_details.
 
-    TYPES
-      tt_flights TYPE STANDARD TABLE OF REF TO lcl_passenger_flight WITH DEFAULT KEY.
+    DATA carrier_id    TYPE /dmo/carrier_id       READ-ONLY.
+    DATA connection_id TYPE /dmo/connection_id    READ-ONLY.
+    DATA flight_date   TYPE /dmo/flight_date      READ-ONLY.
 
     METHODS: get_connection_details
       RETURNING
         VALUE(r_result) TYPE st_connection_details.
+
+  PROTECTED SECTION.
+    DATA planetype TYPE /dmo/plane_type_id.
+    DATA connection_details TYPE st_connection_details.
+
+  PRIVATE SECTION.
+
+ENDCLASS.
+
+CLASS lcl_flight IMPLEMENTATION.
+
+  METHOD get_connection_details.
+    r_result = me->connection_details.
+  ENDMETHOD.
+
+  METHOD get_description.
+
+    DATA txt TYPE string.
+
+    txt = 'Flight &carrid& &connid& on &date& from &from& to &to&'(005).
+    txt = replace( val = txt sub = '&carrid&' with = carrier_id ).
+    txt = replace( val = txt sub = '&connid&' with = connection_id ).
+    txt = replace( val = txt sub = '&date&'   with = |{ flight_date DATE = USER }| ).
+    txt = replace( val = txt sub = '&from&' with = connection_details-airport_from_id ).
+    txt = replace( val = txt sub = '&to&'   with = connection_details-airport_to_id ).
+    APPEND txt TO r_result.
+
+    APPEND |{ 'Planetype:'(006)      } { planetype  } | TO r_result.
+
+  ENDMETHOD.
+
+  METHOD constructor.
+    me->carrier_id    = i_carrier_id.
+    me->connection_id = i_connection_id.
+    me->flight_date   = i_flight_date.
+  ENDMETHOD.
+
+ENDCLASS.
+
+CLASS lcl_passenger_flight DEFINITION
+            INHERITING FROM lcl_flight.
+
+  PUBLIC SECTION.
+
+    METHODS constructor
+      IMPORTING
+        i_carrier_id    TYPE /dmo/carrier_id
+        i_connection_id TYPE /dmo/connection_id
+        i_flight_date   TYPE /dmo/flight_date.
+
+    TYPES
+      tt_flights TYPE STANDARD TABLE OF REF TO lcl_passenger_flight WITH DEFAULT KEY.
 
     METHODS
       get_free_seats
         RETURNING
           VALUE(r_result) TYPE i.
 
+*    METHODS
+*      get_description RETURNING VALUE(r_result) TYPE string_table.
     METHODS
-      get_description RETURNING VALUE(r_result) TYPE string_table.
+      get_description REDEFINITION.
 
     CLASS-METHODS class_constructor.
     CLASS-METHODS
@@ -50,15 +110,12 @@ CLASS lcl_passenger_flight DEFINITION .
 
   PROTECTED SECTION.
   PRIVATE SECTION.
-
-    DATA planetype TYPE /dmo/plane_type_id.
-
     DATA seats_max  TYPE /dmo/plane_seats_max.
     DATA seats_occ  TYPE /dmo/plane_seats_occupied.
-    DATA seats_free TYPE i.
-
     DATA price TYPE /dmo/flight_price.
+
     CLASS-DATA currency TYPE /dmo/currency_code VALUE 'EUR'.
+
     TYPES: BEGIN OF st_flights_buffer,
              carrier_id     TYPE /lrn/passflight-carrier_id,
              connection_id  TYPE /lrn/passflight-connection_id,
@@ -70,10 +127,17 @@ CLASS lcl_passenger_flight DEFINITION .
              price          TYPE /lrn/passflight-price,
              currency_code  TYPE /lrn/passflight-currency_code,
            END OF st_flights_buffer.
-    CLASS-DATA: flights_buffer TYPE TABLE OF st_flights_buffer.
 
+*    CLASS-DATA: flights_buffer
+*          TYPE SORTED TABLE OF st_flights_buffer
+*          WITH NON-UNIQUE KEY carrier_id connection_id flight_date.
 
-    DATA connection_details TYPE st_connection_details.
+    CLASS-DATA: flights_buffer
+          TYPE HASHED TABLE OF st_flights_buffer
+          WITH UNIQUE KEY carrier_id connection_id flight_date
+          WITH NON-UNIQUE SORTED KEY sk_carrier COMPONENTS carrier_id.
+
+    DATA seats_free TYPE i.
 
     TYPES:
       BEGIN OF st_connections_buffer,
@@ -88,7 +152,10 @@ CLASS lcl_passenger_flight DEFINITION .
         duration        TYPE i,
       END OF st_connections_buffer.
 
-    CLASS-DATA connections_buffer TYPE TABLE OF st_connections_buffer.
+*    CLASS-DATA connections_buffer TYPE TABLE OF st_connections_buffer.
+    CLASS-DATA connections_buffer
+          TYPE HASHED TABLE OF st_connections_buffer
+          WITH UNIQUE KEY carrier_id connection_id.
 
 ENDCLASS.
 
@@ -118,73 +185,60 @@ CLASS lcl_passenger_flight IMPLEMENTATION.
                              date = @today,
                              time = c~arrival_time,
                              tzone = t~timzone )
-                                            ),
-                60 )
+                                            ), 60 )
       INTO TABLE @connections_buffer.
-
-*    LOOP AT connections_buffer INTO DATA(connection).
-*
-*      CONVERT DATE today
-*              TIME connection-departure_time
-*              TIME ZONE connection-timzone_from
-*              INTO UTCLONG DATA(departure_utclong).
-*
-*      CONVERT DATE today
-*              TIME connection-arrival_time
-*              TIME ZONE connection-timzone_to
-*              INTO UTCLONG DATA(arrival_utclong).
-*
-*      connection-duration = utclong_diff( high = arrival_utclong
-*                                          low  = departure_utclong
-*                                        ) / 60.
-*
-*      MODIFY connections_buffer FROM connection TRANSPORTING duration.
-*
-*    ENDLOOP.
 
   ENDMETHOD.
 
   METHOD get_flights_by_carrier.
 
-*    SELECT
-*      FROM /lrn/passflight
-*    FIELDS carrier_id, connection_id, flight_date
-*     WHERE carrier_id    = @i_carrier_id
-*      INTO TABLE @DATA(keys).
+    IF NOT line_exists(  flights_buffer[
+                                 KEY sk_carrier
+                          COMPONENTS carrier_id = i_carrier_id
+                         ] ).
 
-    SELECT
-      FROM /lrn/passflight
-    FIELDS carrier_id, connection_id, flight_date,
-           plane_type_id, seats_max, seats_occupied,
-           seats_max - seats_occupied AS seats_free,
-*           price, currency_code
-           currency_conversion(
-             amount             = price,
-             source_currency    = currency_code,
-             target_currency    = @currency,
-             exchange_rate_date = flight_date,
-             on_error           = @sql_currency_conversion=>c_on_error-set_to_null
-                              ) AS price,
-           @currency AS currency_code
-     WHERE carrier_id = @i_carrier_id
-     ORDER BY flight_date ASCENDING
-      INTO TABLE @flights_buffer.
+      SELECT
+        FROM /lrn/passflight
+      FIELDS carrier_id, connection_id, flight_date,
+             plane_type_id, seats_max, seats_occupied,
+             seats_max - seats_occupied AS seats_free,
+             currency_conversion(
+               amount             = price,
+               source_currency    = currency_code,
+               target_currency    = @currency,
+               exchange_rate_date = flight_date,
+               on_error           = @sql_currency_conversion=>c_on_error-set_to_null
+                                ) AS price,
+            @currency AS currency_code
+      WHERE carrier_id = @i_carrier_id
+      APPENDING TABLE @flights_buffer.
 
-    LOOP AT flights_buffer INTO DATA(flight).
-      APPEND NEW lcl_passenger_flight( i_carrier_id    = flight-carrier_id
-                                       i_connection_id = flight-connection_id
-                                       i_flight_date   = flight-flight_date )
-              TO r_result.
-    ENDLOOP.
+*      SORT flights_buffer BY carrier_id connection_id flight_date.
+
+    ENDIF.
+
+    r_result = VALUE #(
+                  FOR <flight> IN flights_buffer
+                  USING KEY sk_carrier
+                  WHERE ( carrier_id = i_carrier_id )
+                  ( NEW lcl_passenger_flight(
+                         i_carrier_id    = <flight>-carrier_id
+                         i_connection_id = <flight>-connection_id
+                         i_flight_date   = <flight>-flight_date ) ) ).
 
   ENDMETHOD.
 
   METHOD constructor.
 
+    super->constructor(
+      i_carrier_id    = i_carrier_id
+      i_connection_id = i_connection_id
+      i_flight_date   = i_flight_date ).
+
     TRY.
-        DATA(flight_raw) = flights_buffer[ carrier_id = i_carrier_id
-                                          connection_id = i_connection_id
-                                          flight_date = i_flight_date ].
+        DATA(flight_raw) = flights_buffer[ carrier_id    = i_carrier_id
+                                           connection_id = i_connection_id
+                                           flight_date   = i_flight_date ].
 
       CATCH cx_sy_itab_line_not_found.
         SELECT SINGLE
@@ -210,9 +264,9 @@ CLASS lcl_passenger_flight IMPLEMENTATION.
     ENDTRY.
 
     IF sy-subrc = 0.
-      me->carrier_id    = i_carrier_id.
-      me->connection_id = i_connection_id.
-      me->flight_date   = i_flight_date.
+*      me->carrier_id    = i_carrier_id.
+*      me->connection_id = i_connection_id.
+*      me->flight_date   = i_flight_date.
 
       planetype = flight_raw-plane_type_id.
       seats_max = flight_raw-seats_max.
@@ -252,15 +306,8 @@ CLASS lcl_passenger_flight IMPLEMENTATION.
 *                                    - connection_details-departure_time )
 *                                    / 60.
 
-
-
     ENDIF.
   ENDMETHOD.
-
-  METHOD get_connection_details.
-    r_result = me->connection_details.
-  ENDMETHOD.
-
 
   METHOD get_free_seats.
     r_result = me->seats_free.
@@ -268,21 +315,20 @@ CLASS lcl_passenger_flight IMPLEMENTATION.
 
   METHOD get_description.
 
-*    APPEND |Flight { carrier_id } { connection_id } on { flight_date DATE = USER } | &&
-*           |from { connection_details-airport_from_id } to { connection_details-airport_to_id } |
-*           TO r_result.
+*    DATA txt TYPE string.
+*
+*    txt = 'Flight &carrid& &connid& on &date& from &from& to &to&'(005).
+*    txt = replace( val = txt sub = '&carrid&' with = carrier_id ).
+*    txt = replace( val = txt sub = '&connid&' with = connection_id ).
+*    txt = replace( val = txt sub = '&date&'   with = |{ flight_date DATE = USER }| ).
+*    txt = replace( val = txt sub = '&from&' with = connection_details-airport_from_id ).
+*    txt = replace( val = txt sub = '&to&'   with = connection_details-airport_to_id ).
+*    APPEND txt TO r_result.
+*
+*    APPEND |{ 'Planetype:'(006)      } { planetype  } | TO r_result.
 
-    DATA txt TYPE string.
+    r_result = super->get_description(  ).
 
-    txt = 'Flight &carrid& &connid& on &date& from &from& to &to&'(005).
-    txt = replace( val = txt sub = '&carrid&' with = carrier_id ).
-    txt = replace( val = txt sub = '&connid&' with = connection_id ).
-    txt = replace( val = txt sub = '&date&'   with = |{ flight_date DATE = USER }| ).
-    txt = replace( val = txt sub = '&from&' with = connection_details-airport_from_id ).
-    txt = replace( val = txt sub = '&to&'   with = connection_details-airport_to_id ).
-    APPEND txt TO r_result.
-
-    APPEND |{ 'Planetype:'(006)      } { planetype  } | TO r_result.
     APPEND |{ 'Maximum Seats:'(007)  } { seats_max  } | TO r_result.
     APPEND |{ 'Occupied Seats:'(008) } { seats_occ  } | TO r_result.
     APPEND |{ 'Free Seats:'(009)     } { seats_free } | TO r_result.
@@ -294,29 +340,24 @@ CLASS lcl_passenger_flight IMPLEMENTATION.
 
 ENDCLASS.
 
-CLASS lcl_cargo_flight DEFINITION .
+CLASS lcl_cargo_flight DEFINITION INHERITING FROM lcl_flight.
 
   PUBLIC SECTION.
 
-    TYPES: BEGIN OF st_connection_details,
-             airport_from_id TYPE /dmo/airport_from_id,
-             airport_to_id   TYPE /dmo/airport_to_id,
-             departure_time  TYPE /dmo/flight_departure_time,
-             arrival_time    TYPE /dmo/flight_departure_time,
-             duration        TYPE i,
-           END OF st_connection_details.
+*    TYPES: BEGIN OF st_connection_details,
+*             airport_from_id TYPE /dmo/airport_from_id,
+*             airport_to_id   TYPE /dmo/airport_to_id,
+*             departure_time  TYPE /dmo/flight_departure_time,
+*             arrival_time    TYPE /dmo/flight_departure_time,
+*             duration        TYPE i,
+*           END OF st_connection_details.
 
     TYPES
        tt_flights TYPE STANDARD TABLE OF REF TO lcl_cargo_flight WITH DEFAULT KEY.
 
-* wrong:
-*    DATA carrier_id    TYPE /dmo/connection_id    READ-ONLY.
-*    DATA connection_id TYPE /dmo/carrier_id       READ-ONLY.
-* correct:
-    DATA carrier_id    TYPE /dmo/carrier_id       READ-ONLY.
-    DATA connection_id TYPE /dmo/connection_id    READ-ONLY.
-
-    DATA flight_date   TYPE /dmo/flight_date      READ-ONLY.
+*    DATA carrier_id    TYPE /dmo/carrier_id       READ-ONLY.
+*    DATA connection_id TYPE /dmo/connection_id    READ-ONLY.
+*    DATA flight_date   TYPE /dmo/flight_date      READ-ONLY.
 
     METHODS constructor
       IMPORTING
@@ -324,18 +365,20 @@ CLASS lcl_cargo_flight DEFINITION .
         i_connection_id TYPE /dmo/connection_id
         i_flight_date   TYPE /dmo/flight_date.
 
-    METHODS get_connection_details
-      RETURNING
-        VALUE(r_result) TYPE st_connection_details.
+*    METHODS get_connection_details
+*      RETURNING
+*        VALUE(r_result) TYPE st_connection_details.
 
     METHODS
       get_free_capacity
         RETURNING
           VALUE(r_result) TYPE /lrn/plane_actual_load.
 
-    METHODS get_description
-      RETURNING
-        VALUE(r_result) TYPE string_table.
+*    METHODS get_description
+*      RETURNING
+*        VALUE(r_result) TYPE string_table.
+
+    METHODS get_description REDEFINITION.
 
     CLASS-METHODS
       get_flights_by_carrier
@@ -364,9 +407,8 @@ CLASS lcl_cargo_flight DEFINITION .
     TYPES tt_flights_buffer TYPE HASHED TABLE OF st_flights_buffer
                             WITH UNIQUE KEY carrier_id connection_id flight_date.
 
-    DATA connection_details TYPE st_connection_details.
-
-    DATA planetype TYPE /dmo/plane_type_id.
+*    DATA connection_details TYPE st_connection_details.
+*    DATA planetype TYPE /dmo/plane_type_id.
 
     DATA maximum_load TYPE /lrn/plane_maximum_load.
     DATA actual_load TYPE /lrn/plane_actual_load.
@@ -386,7 +428,6 @@ CLASS lcl_cargo_flight IMPLEMENTATION.
            plane_type_id, maximum_load, actual_load, load_unit,
            airport_from_id, airport_to_id, departure_time, arrival_time
      WHERE carrier_id    = @i_carrier_id
-     ORDER BY flight_date ASCENDING
       INTO CORRESPONDING FIELDS OF TABLE @flights_buffer.
 
     LOOP AT flights_buffer INTO DATA(flight).
@@ -399,6 +440,11 @@ CLASS lcl_cargo_flight IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD constructor.
+
+    super->constructor(
+      i_carrier_id    = i_carrier_id
+      i_connection_id = i_connection_id
+      i_flight_date   = i_flight_date ).
 
     " Read buffer
     TRY.
@@ -418,9 +464,9 @@ CLASS lcl_cargo_flight IMPLEMENTATION.
           INTO CORRESPONDING FIELDS OF @flight_raw.
     ENDTRY.
 
-    carrier_id    =  i_carrier_id .
-    connection_id =  i_connection_id .
-    flight_date   = i_flight_date.
+*    carrier_id    =  i_carrier_id .
+*    connection_id =  i_connection_id .
+*    flight_date   = i_flight_date.
 
     planetype = flight_raw-plane_type_id.
     maximum_load = flight_raw-maximum_load.
@@ -434,12 +480,10 @@ CLASS lcl_cargo_flight IMPLEMENTATION.
                                   / 60.
 
   ENDMETHOD.
-
-
-  METHOD get_connection_details.
-    r_result = me->connection_details.
-  ENDMETHOD.
-
+*
+*  METHOD get_connection_details.
+*    r_result = me->connection_details.
+*  ENDMETHOD.
 
   METHOD get_free_capacity.
     r_result = maximum_load - actual_load.
@@ -447,10 +491,13 @@ CLASS lcl_cargo_flight IMPLEMENTATION.
 
   METHOD get_description.
 
-    APPEND |Flight { carrier_id } { connection_id } on { flight_date DATE = USER } | &&
-           |from { connection_details-airport_from_id } to { connection_details-airport_to_id } |
-           TO r_result.
-    APPEND |Planetype:     { planetype } |                         TO r_result.
+*    APPEND |Flight { carrier_id } { connection_id } on { flight_date DATE = USER } | &&
+*           |from { connection_details-airport_from_id } to { connection_details-airport_to_id } |
+*           TO r_result.
+*    APPEND |Planetype:     { planetype } |                         TO r_result.
+
+    r_result = super->get_description( ).
+
     APPEND |Maximum Load:  { maximum_load         } { load_unit }| TO r_result.
     APPEND |Free Capacity: { get_free_capacity( ) } { load_unit }| TO r_result.
 
@@ -458,7 +505,7 @@ CLASS lcl_cargo_flight IMPLEMENTATION.
 
 ENDCLASS.
 
-CLASS lcl_carrier DEFINITION .
+CLASS lcl_carrier DEFINITION.
 
   PUBLIC SECTION.
 
@@ -473,7 +520,8 @@ CLASS lcl_carrier DEFINITION .
     METHODS constructor
       IMPORTING
                 i_carrier_id TYPE /dmo/carrier_id
-      RAISING   cx_abap_invalid_value.
+      RAISING   cx_abap_invalid_value
+                cx_abap_auth_check_exception.
 
     METHODS get_output RETURNING VALUE(r_result) TYPE tt_output.
 
@@ -484,7 +532,7 @@ CLASS lcl_carrier DEFINITION .
         i_from_date       TYPE /dmo/flight_date
         i_seats           TYPE i
       EXPORTING
-        e_flight          TYPE REF TO lcl_passenger_flight
+        e_flight          TYPE REF TO lcl_flight "lcl_passenger_flight
         e_days_later      TYPE i.
 
     METHODS find_cargo_flight
@@ -494,22 +542,23 @@ CLASS lcl_carrier DEFINITION .
         i_from_date       TYPE /dmo/flight_date
         i_cargo           TYPE /lrn/plane_actual_load
       EXPORTING
-        e_flight          TYPE REF TO lcl_cargo_flight
+        e_flight          TYPE REF TO lcl_flight "lcl_cargo_flight
         e_days_later      TYPE i.
-
-    METHODS get_average_free_seats
-      RETURNING VALUE(r_result) TYPE i.
 
   PROTECTED SECTION.
   PRIVATE SECTION.
-
     DATA name          TYPE string.
     DATA currency_code TYPE /dmo/currency_code ##NEEDED.
 
-    DATA passenger_flights TYPE lcl_passenger_flight=>tt_flights.
+*    DATA passenger_flights TYPE lcl_passenger_flight=>tt_flights.
+*    DATA cargo_flights TYPE lcl_cargo_flight=>tt_flights.
 
-    DATA cargo_flights TYPE lcl_cargo_flight=>tt_flights.
+    DATA flights TYPE lcl_cargo_flight=>tab.
+    DATA pf_count TYPE i.
+    DATA cf_count TYPE i.
 
+    METHODS get_average_free_seats
+      RETURNING VALUE(r_result) TYPE i.
 
 ENDCLASS.
 
@@ -519,19 +568,42 @@ CLASS lcl_carrier IMPLEMENTATION.
 
     me->carrier_id = i_carrier_id.
 
+*    SELECT SINGLE
+*      FROM /lrn/i_carrier
+*    FIELDS concat_with_space( airlineid, name, 1 ) , currencycode
+*     WHERE airlineid = @i_carrier_id
+*     INTO ( @me->name, @me->currency_code ).
+
+    DATA(passenger_flights) =
+          lcl_passenger_flight=>get_flights_by_carrier(
+                i_carrier_id    = i_carrier_id ).
+
+    pf_count = lines( passenger_flights ).
+
+    DATA(cargo_flights) =
+          lcl_cargo_flight=>get_flights_by_carrier(
+                i_carrier_id    = i_carrier_id ).
+
+    cf_count = lines( cargo_flights ).
+
     SELECT SINGLE
       FROM /lrn/carrier
-*    FIELDS carrier_name, currency_code
-*    FIELDS carrier_id && ' ' && name, currency_code
     FIELDS concat_with_space( carrier_id, name, 1 ) , currency_code
      WHERE carrier_id = @i_carrier_id
      INTO ( @me->name, @me->currency_code ).
-
+*
     IF sy-subrc <> 0.
       RAISE EXCEPTION TYPE cx_abap_invalid_value.
     ENDIF.
 
-*    name = carrier_id && ` ` && name.
+    AUTHORITY-CHECK
+           OBJECT '/LRN/CARR'
+               ID '/LRN/CARR' FIELD i_carrier_id
+               ID 'ACTVT'     FIELD '03'.
+
+    IF sy-subrc <> 0.
+      RAISE EXCEPTION TYPE cx_abap_auth_check_exception.
+    ENDIF.
 
     passenger_flights =
         lcl_passenger_flight=>get_flights_by_carrier(
@@ -541,14 +613,33 @@ CLASS lcl_carrier IMPLEMENTATION.
         lcl_cargo_flight=>get_flights_by_carrier(
               i_carrier_id    = i_carrier_id ).
 
+*    LOOP AT passenger_flights INTO DATA(passfligth).
+*      APPEND passfligth TO flights.
+*    ENDLOOP.
+
+    flights = VALUE #( BASE flights
+                       FOR pflight IN passenger_flights
+                       ( pflight ) ).
+
+
+*    LOOP AT cargo_flights INTO DATA(cargoflight).
+*      APPEND cargoflight TO flights.
+*    ENDLOOP.
+
+    flights = VALUE #( BASE flights
+                       FOR cflight IN cargo_flights
+                      ( cflight ) ).
+
   ENDMETHOD.
 
   METHOD get_output.
 
     APPEND |{ 'Carrier Name:'(001)       } { me->name } | TO r_result.
-    APPEND |{ 'Passenger Flights:'(002)  } { lines( passenger_flights ) } | TO r_result.
-    APPEND |{ 'Average free seats:'(003) } { get_average_free_seats(  ) } | TO r_result.
-    APPEND |{ 'Cargo Flights:'(004)      } { lines( cargo_flights     ) } | TO r_result.
+*    APPEND |{ 'Passenger Flights:'(002)  } { lines( passenger_flights ) } | TO r_result.
+    APPEND |{ 'Passenger Flights:'(002)  } { pf_count } | TO r_result.
+    APPEND |{ 'Average free seats:'(003) } { get_average_free_seats( ) } | TO r_result.
+*    APPEND |{ 'Cargo Flights:'(004)      } { lines( cargo_flights ) } | TO r_result.
+    APPEND |{ 'Cargo Flights:'(004)      } { cf_count } | TO r_result.
 
   ENDMETHOD.
 
@@ -556,14 +647,17 @@ CLASS lcl_carrier IMPLEMENTATION.
 
     e_days_later = 99999999.
 
-    LOOP AT me->cargo_flights INTO DATA(flight)
-        WHERE table_line->flight_date >= i_from_date.
+*    LOOP AT me->cargo_flights INTO DATA(flight)
+    LOOP AT me->flights INTO DATA(flight)
+        WHERE table_line->flight_date >= i_from_date
+        AND table_line IS INSTANCE OF lcl_cargo_flight.
 
       DATA(connection_details) = flight->get_connection_details(  ).
 
       IF connection_details-airport_from_id = i_airport_from_id
        AND connection_details-airport_to_id = i_airport_to_id
-       AND flight->get_free_capacity(  ) >= i_cargo.
+*       AND flight->get_free_capacity( ) >= i_cargo.
+       AND CAST lcl_cargo_flight( flight )->get_free_capacity( ) >= i_cargo.
 
 *        DATA(days_later) =  i_from_date - flight->flight_date.
         DATA(days_later) =   flight->flight_date - i_from_date .
@@ -581,14 +675,17 @@ CLASS lcl_carrier IMPLEMENTATION.
 
     e_days_later = 99999999.
 
-    LOOP AT me->passenger_flights INTO DATA(flight)
-         WHERE table_line->flight_date >= i_from_date.
+*    LOOP AT me->passenger_flights INTO DATA(flight)
+    LOOP AT me->flights INTO DATA(flight)
+      WHERE table_line->flight_date >= i_from_date
+        AND table_line IS INSTANCE OF lcl_passenger_flight.
 
       DATA(connection_details) = flight->get_connection_details(  ).
 
       IF connection_details-airport_from_id = i_airport_from_id
        AND connection_details-airport_to_id = i_airport_to_id
-       AND flight->get_free_seats( ) >= i_seats.
+*       AND flight->get_free_seats( ) >= i_seats.
+       AND CAST lcl_passenger_flight( flight )->get_free_seats( ) >= i_seats.
         DATA(days_later) = flight->flight_date - i_from_date.
 
         IF days_later < e_days_later. "earlier than previous one?
@@ -613,13 +710,31 @@ CLASS lcl_carrier IMPLEMENTATION.
 *
 *    r_result = total / lines( passenger_flights ).
 
-    SELECT FROM /lrn/passflight
-    FIELDS SUM( seats_max - seats_occupied ) AS sum,
-           COUNT(*) AS  count
-     WHERE carrier_id = @carrier_id
-     INTO @DATA(aggregate).
+* Aggregate functions
+*****************************************************************
+*    SELECT FROM /lrn/passflight
+*    FIELDS SUM( seats_max - seats_occupied ) AS sum,
+*           COUNT(*) AS count
+*     WHERE carrier_id = @carrier_id
+*      INTO @DATA(aggregates).
+*
+*    r_result = aggregates-sum / aggregates-count.
+*
+* Table Reductions
+**********************************************************************
+*    r_result = REDUCE #(
+*                 INIT i = 0
+*                  FOR <flight> IN passenger_flights
+*                 NEXT i = i + <flight>->get_free_seats( )
+*                       )
+*             / lines( passenger_flights ) .
 
-    r_result = aggregate-sum / aggregate-count.
+    r_result = REDUCE #(
+                 INIT i = 0
+                  FOR <flight> IN flights
+                    WHERE ( table_line IS INSTANCE OF lcl_passenger_flight )
+                 NEXT i = i + CAST lcl_passenger_flight( <flight> )->get_free_seats( )
+                       ) / pf_count.
 
   ENDMETHOD.
 

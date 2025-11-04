@@ -9,7 +9,8 @@ CLASS lcl_demo DEFINITION.
 
   PRIVATE SECTION.
 
-    TYPES t_flights TYPE STANDARD TABLE OF /dmo/flight WITH NON-UNIQUE KEY carrier_id connection_id flight_date.
+    TYPES t_flights TYPE STANDARD TABLE OF /dmo/flight
+                    WITH NON-UNIQUE KEY carrier_id connection_id flight_date.
 
     METHODS loop_field_symbol CHANGING c_flights TYPE t_Flights.
     METHODS loop_Work_area CHANGING c_flights TYPE t_flights.

@@ -1,0 +1,17 @@
+CLASS zcl_2950_inter_defi DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    INTERFACES if_oo_adt_classrun .
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+CLASS zcl_2950_inter_defi IMPLEMENTATION.
+
+  METHOD if_oo_adt_classrun~main.
+  ENDMETHOD.
+ENDCLASS.

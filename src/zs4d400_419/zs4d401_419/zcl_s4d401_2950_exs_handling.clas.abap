@@ -1,4 +1,4 @@
-CLASS zcl_2950_its_fsym DEFINITION
+CLASS zcl_s4d401_2950_exs_handling DEFINITION
   PUBLIC
   FINAL
   CREATE PUBLIC .
@@ -10,20 +10,28 @@ CLASS zcl_2950_its_fsym DEFINITION
   PRIVATE SECTION.
 ENDCLASS.
 
-CLASS ZCL_2950_ITS_FSYM IMPLEMENTATION.
+CLASS zcl_s4d401_2950_exs_handling IMPLEMENTATION.
 
   METHOD if_oo_adt_classrun~main.
 
-    CONSTANTS c_carrier_id TYPE /dmo/carrier_id VALUE 'LH'.
+*    CONSTANTS c_carrier_id TYPE /dmo/carrier_id VALUE 'LH'.
+*    CONSTANTS c_carrier_id TYPE /dmo/carrier_id VALUE 'XX'.
+    CONSTANTS c_carrier_id TYPE /dmo/carrier_id VALUE 'UA'.
 
     TRY.
-        DATA(carrier) = NEW lcl_carrier(  i_carrier_id = c_carrier_id ).
+        DATA(carrier)  = lcl_carrier=>get_instance(  i_carrier_id = c_carrier_id ).
 
         out->write(  name = `Carrier Overview`
                      data = carrier->get_output(  ) ).
 
-      CATCH cx_abap_invalid_value.
-        out->write( | Carrier { c_carrier_id } does not exist | ).
+*      CATCH cx_abap_invalid_value INTO DATA(exc_val).
+**        out->write( | Carrier { c_carrier_id } does not exist | ).
+*        out->write( exc_val->get_text( ) ).
+*      CATCH cx_abap_auth_check_exception INTO DATA(exc_auth).
+**        out->write( | No authorization to display carrier { c_carrier_id } | ).
+*        out->write( exc_auth->get_text( ) ).
+      CATCH zcx_2950_failed INTO DATA(exc_fail).
+        out->write( exc_fail->get_text( ) ).
     ENDTRY.
 
     IF carrier IS BOUND.
@@ -44,12 +52,11 @@ CLASS ZCL_2950_ITS_FSYM IMPLEMENTATION.
            i_seats           = 5
          IMPORTING
            e_flight =     DATA(pass_flight)
-           e_days_later = DATA(days_later)
-                         ).
+           e_days_later = DATA(days_later) ).
 
       IF pass_flight IS BOUND.
         out->write( name = |Found a suitable passenger flight in { days_later } days:|
-                    data = pass_flight->get_description( ) ).
+                    data = pass_flight->get_output( ) ).
       ELSE.
         out->write( data = `No Passenger Flight found` ).
       ENDIF.
@@ -68,17 +75,14 @@ CLASS ZCL_2950_ITS_FSYM IMPLEMENTATION.
            i_cargo           = 1200
          IMPORTING
            e_flight =     DATA(cargo_flight)
-           e_days_later = DATA(days_later2)
-                         ).
+           e_days_later = DATA(days_later2) ).
 
       IF cargo_flight IS BOUND.
         out->write( name = |Found a suitable cargo flight in { days_later2 } days:|
-                    data = cargo_flight->get_description( ) ).
+                    data = cargo_flight->get_output( ) ).
       ELSE.
         out->write( data = `No cargo flight found` ).
       ENDIF.
-
-
 
     ENDIF.
 
